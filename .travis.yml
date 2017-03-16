@@ -1,27 +1,35 @@
-language: c
-
 sudo: false
+
+notifications:
+  email: false
 
 env:
   matrix:
-    - LUA=lua5.2
-    - LUA=lua5.3
-    - LUA=luajit
-    - LUA=luajit2.1
-
-branches:
-  only:
-    - master
+    - LUA="lua 5.1"
+    - LUA="lua 5.2"
+    - LUA="lua 5.3"
+    - LUA="luajit 2.0"
+    - LUA="luajit 2.1"
 
 before_install:
-  - source <(curl -s http://rocks.simbio.se/travis.sh 2> /dev/null)
+  - pip install --user hererocks
+  - hererocks lua_install -r^ --$LUA
+  - export PATH=$PATH:$PWD/lua_install/bin
   - luarocks install busted
+  - luarocks install luacheck
+  - luarocks install luacov-coveralls
 
-install: luarocks install *.rockspec --only-deps
+install:
+  - luarocks make
 
-script: busted
+script:
+  - make lint
+  - busted --exclude-tags=JIT -v --coverage -o gtest --repeat 3 spec
+  - if [ "$LUA" = "luajit 2.1" ]; then busted -v -o gtest --tags JIT; fi
 
-notifications:
-  email:
-    on_success: change
-    on_failure: always
+after_success:
+  - luacov-coveralls -i ./lib/resty/mediador/ip.lua
+  - luacov-coveralls -i ./lib/resty/mediador/proxy.lua
+
+cache:
+  pip: true
