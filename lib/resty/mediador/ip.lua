@@ -5,7 +5,15 @@
 -- @license   MIT
 -- @copyright Simbiose 2015, Mashape, Inc. 2017
 
-local bit = require "bit"
+local ok, bit = pcall(require, "bit")
+if not ok and _VERSION > 'Lua 5.2' then
+  bit = assert(load([[return {
+    band   = function (a, b) return a & b end,
+    bor    = function (a, b) return a | b end,
+    rshift = function (a, b) return a >> b end,
+    lshift = function (a, b) return a << b end
+  }]]))()
+end
 
 
 local ip           = {}
