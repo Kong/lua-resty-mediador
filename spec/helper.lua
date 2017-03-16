@@ -106,7 +106,7 @@ assert:register('assertion', 'safefail', safe_fail, 'assertion.safe_equals.posit
 -- @mix ...
 -- @return function
 
-function bind(fn, ...)
+return function(fn, ...)
   local args = {...}
   return function()
     fn(unpack(args))

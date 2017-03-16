@@ -1,5 +1,5 @@
 
-require [[spec.helper]]
+local bind = require [[spec.helper]]
 
 local proxy, find, format, insert =
   require [[..proxy]], require('string').find, require('string').format, require('table').insert

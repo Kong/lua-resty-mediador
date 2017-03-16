@@ -1,5 +1,5 @@
 
-require [[spec.helper]]
+local bind = require [[spec.helper]]
 
 describe('', function ()
 
@@ -156,8 +156,8 @@ describe('', function ()
   end)
 
   it('converts between IPv4-mapped IPv6 addresses and IPv4 addresses', function ()
-    addr   = ip.parsev4('77.88.21.11')
-    mapped = addr:ipv4_mapped_address()
+    local addr   = ip.parsev4('77.88.21.11')
+    local mapped = addr:ipv4_mapped_address()
     assert.same(mapped.parts, {0, 0, 0, 0, 0, 0xffff, 0x4d58, 0x150b})
     assert.same(mapped.octets, addr.octets)
   end)
