@@ -5,8 +5,17 @@
 -- @license   MIT
 -- @copyright Simbiose 2015, Mashape, Inc. 2017
 
-local bit = require "bit"
 local ip  = require "resty.mediador.ip"
+local ok, bit = pcall(require, "bit")
+
+if _VERSION > 'Lua 5.2' then
+  bit = not ok and {} or bit
+  assert(load([[
+    math.pow   = function (a, b) return a ^ b end
+    bit.band   = bit.band or function (a, b) return a & b end
+    bit.lshift = bit.lshift ot function (a, b) return a << b end
+  ]], nil, nil, { bit = bit, math = math }))()
+end
 
 
 local table = table
