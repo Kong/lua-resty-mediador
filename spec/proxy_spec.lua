@@ -1,8 +1,10 @@
+local bind  = require "spec.helper"
+local proxy = require "resty.mediador.proxy"
 
-local bind = require [[spec.helper]]
 
-local proxy, find, format, insert =
-  require [[..proxy]], require('string').find, require('string').format, require('table').insert
+local find        = string.find
+local insert      = table.insert
+
 
 local function create_req (socket_addr, headers)
   return {
@@ -17,10 +19,6 @@ end
 
 local function none ()
   return false
-end
-
-local function is_function (var)
-  return 'function' == type(var)
 end
 
 local function trust10x (addr)
@@ -550,6 +548,12 @@ describe('proxyaddr.compile(trust)', function ()
         assert.is.Function(compile({'loopback', '10.0.0.1'}))
       end)
 
+      it('should accept zero CIDR', function ()
+        assert.is.Function(compile({'0.0.0.0/0', '::/0'}))
+        assert.is.Function(compile('0.0.0.0/0'))
+        assert.is.Function(compile('::/0'))
+      end)
+
       it('should reject non-IP', function ()
         assert.has_error(bind(compile, 'blargh'), 'invalid IP address: blargh')
         assert.has_error(bind(compile, '-1'),     'invalid IP address: -1')
@@ -561,6 +565,7 @@ describe('proxyaddr.compile(trust)', function ()
         assert.has_error(bind(compile, '::ffff:a00:2/136'), 'invalid range on address: ::ffff:a00:2/136')
         assert.has_error(bind(compile, '::ffff:a00:2/46'),  'invalid range on address: ::ffff:a00:2/46')
       end)
+
     end)
   end)
 end)

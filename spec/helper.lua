@@ -2,13 +2,20 @@
 --
 -- @author    leite (xico@simbio.se)
 -- @license   MIT
--- @copyright Simbiose 2015
+-- @copyright Simbiose 2015, Mashape, Inc. 2017
 
-local table, say, util, assert =
-  require [[table]], require [[say]], require [[luassert.util]], require [[luassert.assert]]
+local say    = require "say"
+local util   = require "luassert.util"
+local assert = require "luassert.assert"
 
-local unpack, remove, insert, deep_cmp =
-  table.unpack or unpack, util.tremove, util.tinsert, util.deepcompare
+
+local type     = type
+local tostring = tostring
+local unpack   = unpack
+local tostring = tostring
+local unpack   = table.unpack or unpack
+local remove   = util.tremove
+local compare  = util.deepcompare
 
 -- remove ?!
 --
@@ -17,7 +24,6 @@ local unpack, remove, insert, deep_cmp =
 -- @return boolean
 
 local function final_swap(args, index)
-  --insert(args, 1, args[index])
   remove(args, index + 1)
   return false
 end
@@ -28,7 +34,7 @@ end
 -- @table  args
 -- @return boolean
 
-local function safe_equals(state, args)
+local function safe_equals(_, args)
   assert(args.n > 2, say('assertion.internal.argtolittle', {'safe_equals', 3, tostring(args.n)}))
   assert(
     'boolean' == type(args[2]),
@@ -49,7 +55,7 @@ end
 -- @table  args
 -- @return boolean
 
-local function safe_same(state, args)
+local function safe_same(_, args)
   assert(args.n > 2, say('assertion.internal.argtolittle', {'safe_same', 3, tostring(args.n)}))
   assert(
     'boolean' == type(args[2]),
@@ -58,7 +64,7 @@ local function safe_same(state, args)
   assert(args[2] == true, say('assertion.error.negative', {args[3]}))
 
   if 'table' == type(args[1]) and 'table' == type(args[3]) then
-    if not deep_cmp(args[3], args[1], true) then
+    if not compare(args[3], args[1], true) then
       return final_swap(args, 1)
     end
   else
@@ -76,7 +82,7 @@ end
 -- @table  args
 -- @return boolean
 
-local function safe_fail(state, args)
+local function safe_fail(_, args)
   assert(args.n > 2, say('assertion.internal.argtolittle', {'safe_fail', 3, tostring(args.n)}))
   assert(
     'boolean' == type(args[2]),

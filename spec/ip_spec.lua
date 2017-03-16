@@ -1,12 +1,12 @@
+local bind = require "spec.helper"
 
-local bind = require [[spec.helper]]
 
 describe('', function ()
 
   local ip
 
   setup(function ()
-    ip = require [[..ip]]
+    ip = require [[resty.mediador.ip]]
   end)
 
   teardown(function ()
