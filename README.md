@@ -1,19 +1,13 @@
-[![Build Status](https://travis-ci.org/simbiose/mediador.png?branch=master)](https://travis-ci.org/simbiose/mediador)
+[![Build Status](https://travis-ci.org/Mashape/lua-resty-mediador.png?branch=master)](https://travis-ci.org/Mashape/lua-resty-mediador)
 [![License](http://img.shields.io/badge/License-MIT-red.svg)](LICENSE)
 
-# mediador
+# lua-resty-mediador
 
-mediador, determine address of proxied request and ip handling, see [website](http://rocks.simbio.se/mediador) for details
+`lua-resty-mediador` determines address of proxied request and does IP handling.
 
 # license
 
 MIT, see LICENSE and source
-
-# installation
-
-## luarocks
-
-    # luarocks install mediador
 
 # tests
 
