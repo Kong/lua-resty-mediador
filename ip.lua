@@ -4,6 +4,8 @@
 -- @author    leite (xico@simbio.se)
 -- @license   MIT
 -- @copyright Simbiose 2015
+--
+-- Modifications by Aapo Talvensaari, Mashape, Inc., 2017
 
 local math, string, table, bit_available, bit =
   require [[math]], require [[string]], require [[table]], pcall(require, 'bit')
@@ -18,9 +20,9 @@ if not bit_available and _VERSION == 'Lua 5.3' then
   }]]))()
 end
 
-local ip, modf, len, match, find, format, concat, insert, band, bor, rshift, lshift, type,
+local ip, len, match, find, format, concat, insert, band, bor, rshift, lshift, type,
   assert, error, tonumber, pcall, setmetatable =
-  {}, math.modf, string.len, string.match, string.find, string.format, table.concat, table.insert,
+  {}, string.len, string.match, string.find, string.format, table.concat, table.insert,
   bit.band, bit.bor, bit.rshift, bit.lshift, type, assert, error, tonumber, pcall, setmetatable
 
 local _octets, _octet, _part, _parts_with_octets, EMPTY, COLON, ZERO =
@@ -112,10 +114,10 @@ end
 
 local function match_cidr(first, second, part_size, cidr_bits)
   assert(#first == #second, 'cannot match CIDR for objects with different lengths')
-  local part, shift = 0, 0
+  local part = 0
   while cidr_bits > 0 do
     part  = part + 1
-    shift = part_size - cidr_bits
+    local shift = part_size - cidr_bits
     shift = shift < 0 and 0 or shift
     if rshift(first[part], shift) ~= rshift(second[part], shift) then
       return false
@@ -133,9 +135,8 @@ end
 -- @return string
 
 local function subnet_match(address, range_list, default_name)
-  local subnet = {}
   for i = 1, #range_list do
-    subnet = range_list[i]
+    local subnet = range_list[i]
     if #subnet == 1 then
       if address:match(subnet) then
         return subnet[1]
@@ -160,7 +161,7 @@ end
 -- @return boolean, [string]
 
 local function parse_v4(string, octets, cidr)
-  local value, hex, _, __, _cidr = match(string, _octet)
+  local value, hex, _, _, _cidr = match(string, _octet)
 
   if value then
     value = tonumber(value, hex == ZERO and 8 or nil)
@@ -194,8 +195,8 @@ end
 -- @return boolean, [string]
 
 local function parse_v6(string, parts, octets, cidr)
-  local nd_sep, part, l_sep, count, double, length, index, last, string, octets_st, sep, _cidr =
-    '', '', false, 1, 0, 0, 0, 0, match(string, _parts_with_octets)
+  local l_sep, count, double, length, string, octets_st, sep, _cidr =
+    false, 1, 0, 0, match(string, _parts_with_octets)
 
   if not string or EMPTY == string then
     return false, 'invalid ipv6 format'
@@ -210,7 +211,7 @@ local function parse_v6(string, parts, octets, cidr)
     end
   end
 
-  _cidr, length, index, last, sep, part, nd_sep =
+  local _cidr, length, index, last, sep, part, nd_sep =
     tonumber(_cidr==EMPTY and (cidr and cidr or 128) or _cidr), len(string), find(string, _part)
 
   while index and index <= length do
@@ -334,10 +335,10 @@ local ip_metatable = {
       return concat(self.octets, '.')
     end
 
-    local part, state, size, output = '', 0, #self.parts, {}
+    local state, size, output = 0, #self.parts, {}
 
     for i = 1, size do
-      part = format('%x', self.parts[i])
+      local part = format('%x', self.parts[i])
       if 0 == state then
         insert(output, (ZERO == part and EMPTY or part))
         state = 1
@@ -431,8 +432,8 @@ end
 -- @return metatable
 
 function ip.parsev4 (string, cidr)
-  local octets, message = {}, ''
-  cidr, message = parse_v4(string, octets, cidr)
+  local octets = {}
+  local cidr, message = parse_v4(string, octets, cidr)
   assert(cidr ~= false, message)
   return ip.v4(octets, cidr)
 end
@@ -444,8 +445,8 @@ end
 -- @return metatable
 
 function ip.parsev6 (string, cidr)
-  local parts, octets, message = {}, {}, ''
-  cidr, message = parse_v6(string, parts, octets, cidr)
+  local parts, octets = {}, {}
+  local cidr, message = parse_v6(string, parts, octets, cidr)
   assert(cidr ~= false, message)
   return ip.v6(parts, cidr, octets)
 end
