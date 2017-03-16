@@ -8,7 +8,7 @@
 -- Modifications by Aapo Talvensaari, Mashape, Inc., 2017
 
 local string, table, math, ip_addr, bit_available, bit =
-  require [[string]], require [[table]], require [[math]], require [[mediador.ip]], pcall(require, 'bit')
+  require [[string]], require [[table]], require [[math]], require [[ip]], pcall(require, 'bit')
 
 -- yey! Lua 5.3 bitwise keywords available
 if _VERSION == 'Lua 5.3' then
@@ -132,7 +132,7 @@ local function parse_ip_notation (note)
     range = max
   else
     range = tonumber(range) and tonumber(range) or
-      (isip(range) and parse_netmask(range) or 0)
+      (isip(range) and parse_netmask(range) or -1)
   end
 
   if 'ipv6' == kind and ip:is_ipv4_mapped() then
