@@ -3,37 +3,36 @@
 --
 -- @author    leite (xico@simbio.se)
 -- @license   MIT
--- @copyright Simbiose 2015
---
--- Modifications by Aapo Talvensaari, Mashape, Inc., 2017
+-- @copyright Simbiose 2015, Mashape, Inc. 2017
 
-local string, table, math, ip_addr, bit_available, bit =
-  require [[string]], require [[table]], require [[math]], require [[ip]], pcall(require, 'bit')
+local bit = require "bit"
+local ip  = require "resty.mediador.ip"
 
--- yey! Lua 5.3 bitwise keywords available
-if _VERSION == 'Lua 5.3' then
-  bit = not bit_available and {} or bit
-  assert(load([[
-    math.pow   = function (a, b) return a ^ b end
-    bit.band   = bit.band or function (a, b) return a & b end
-    bit.lshift = bit.lshift ot function (a, b) return a << b end
-  ]], nil, nil, {bit = bit, math = math}))()
-end
 
-local type, tonumber, assert, setmetatable, format, match, gmatch, insert, remove, pow, band, lshift,
-  isip, parse_ip =
-  type, tonumber, assert, setmetatable, string.format, string.match, string.gmatch, table.insert,
-  table.remove, math.pow, bit.band, bit.lshift, ip_addr.valid, ip_addr.parse
+local table = table
+local math = math
+local type = type
+local tonumber = tonumber
+local assert = assert
+local setmetatable = setmetatable
+local format = string.format
+local match = string.match
+local gmatch = string.gmatch
+local insert = table.insert
+local remove = table.remove
+local pow = math.pow
+local band = bit.band
+local lshift = bit.lshift
+local isip = ip.valid
+local parseip = ip.parse
 
---
 
-local ipranges, EMPTY = {
-  linklocal   = {'169.254.0.0/16', 'fe80::/10'},
-  loopback    = {'127.0.0.1/8', '::1/128'},
-  uniquelocal = {'10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'}
-}, ''
-
-string, table, math, bit, ip_addr = nil, nil, nil, nil, nil
+local EMPTY   = ''
+local RANGES  = {
+  linklocal   = { '169.254.0.0/16', 'fe80::/10' },
+  loopback    = { '127.0.0.1/8', '::1/128' },
+  uniquelocal = { '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7' }
+}
 
 -- splice table
 --
@@ -43,7 +42,7 @@ string, table, math, bit, ip_addr = nil, nil, nil, nil, nil
 -- @table  source
 -- @return table
 
-local function splice (destiny, index, replaces, source)
+local function splice(destiny, index, replaces, source)
   local chopped = {}
   replaces      = replaces or 1
 
@@ -69,7 +68,7 @@ end
 -- @table  req
 -- @return table
 
-local function forwarded (req)
+local function forwarded(req)
   assert(req, 'argument req is required')
 
   local addrs = {req.connection.remote_address}
@@ -86,12 +85,12 @@ end
 -- @string note
 -- @return number
 
-local function parse_netmask (netmask)
-  local ip          = parse_ip(netmask)
-  local parts, size = ip.octets, 8
+local function parse_netmask(netmask)
+  local addr = parseip(netmask)
+  local parts, size = addr.octets, 8
 
-  if 'ipv6' == ip:kind() then
-    parts, size = ip.parts, 16
+  if 'ipv6' == addr:kind() then
+    parts, size = addr.parts, 16
   end
 
   local max, range = pow(2, size) - 1, 0
@@ -118,14 +117,14 @@ end
 -- @string note
 -- @return ip, number
 
-local function parse_ip_notation (note)
-  local ip, range = match(note, '^([^/]+)/([^$]+)$')
-  ip = (not ip or EMPTY == ip) and note or ip
+local function parse_ip_notation(note)
+  local addr, range = match(note, '^([^/]+)/([^$]+)$')
+  addr = (not addr or EMPTY == addr) and note or addr
 
-  assert(isip(ip), format('invalid IP address: %s', ip))
+  assert(isip(addr), format('invalid IP address: %s', addr))
 
-  ip   = parse_ip(ip)
-  local kind = ip:kind()
+  addr = parseip(addr)
+  local kind = addr:kind()
   local max  = 'ipv6' == kind and 128 or 32
 
   if not range or EMPTY == range then
@@ -135,21 +134,21 @@ local function parse_ip_notation (note)
       (isip(range) and parse_netmask(range) or -1)
   end
 
-  if 'ipv6' == kind and ip:is_ipv4_mapped() then
-    ip    = ip:ipv4_address()
+  if 'ipv6' == kind and addr:is_ipv4_mapped() then
+    addr = addr:ipv4_address()
     range = range <= max and range - 96 or range
   end
 
   assert(range >= 0 and range <= max, format('invalid range on address: %s', note))
 
-  return ip, range
+  return addr, range
 end
 
 -- static trust function to trust nothing.
 --
 -- @return boolean
 
-local function trust_none ()
+local function trust_none()
   return false
 end
 
@@ -158,23 +157,23 @@ end
 -- @table  subnet
 -- @return function
 
-local function trust_single (subnet)
+local function trust_single(subnet)
   local subnet_ip, subnet_range = subnet[1], subnet[2]
   local subnet_kind             = subnet_ip:kind()
   local subnet_isipv4           = subnet_kind == 'ipv4'
 
-  local function _trust (addr)
-    if not(isip(addr)) then
+  local function _trust(address)
+    if not(isip(address)) then
       return false
     end
 
-    local ip   = parse_ip(addr)
-    local kind = ip:kind()
+    local addr = parseip(address)
+    local kind = addr:kind()
 
     return kind == subnet_kind and
-      ip:match(subnet_ip, subnet_range) or
-      ((subnet_isipv4 and kind == 'ipv6' and ip:is_ipv4_mapped()) and
-        ip:ipv4_address():match(subnet_ip, subnet_range) or false)
+      addr:match(subnet_ip, subnet_range) or
+      ((subnet_isipv4 and kind == 'ipv6' and addr:is_ipv4_mapped()) and
+        addr:ipv4_address():match(subnet_ip, subnet_range) or false)
   end
   return _trust
 end
@@ -184,27 +183,27 @@ end
 -- @table subnets
 -- @return function
 
-local function trust_multi (subnets)
-  local function _trust (addr)
+local function trust_multi(subnets)
+  local function _trust(address)
 
-    if not(isip(addr)) then
+    if not(isip(address)) then
       return false
     end
 
-    local ip = parse_ip(addr)
-    local kind, ipv4 = ip:kind()
+    local addr = parseip(address)
+    local kind, ipv4 = addr:kind()
 
     for i = 1, #subnets do
       local skip
       local subnet                  = subnets[i]
       local subnet_ip, subnet_range = subnet[1], subnet[2]
-      local subnet_kind, trusted    = subnet_ip:kind(), ip
+      local subnet_kind, trusted    = subnet_ip:kind(), addr
 
       if kind ~= subnet_kind then
-        if 'ipv6' ~= kind or 'ipv4' ~= subnet_kind or not ip:is_ipv4_mapped() then
+        if 'ipv6' ~= kind or 'ipv4' ~= subnet_kind or not addr:is_ipv4_mapped() then
           skip = true
         else
-          ipv4    = ipv4 or ip:ipv4_address()
+          ipv4    = ipv4 or addr:ipv4_address()
           trusted = ipv4
         end
       end
@@ -218,16 +217,16 @@ local function trust_multi (subnets)
   return _trust
 end
 
--- compile `table` elements into range subnets.
+-- compile `subnets` elements into range subnets.
 --
--- @table  table
+-- @table  subnets
 -- @return table
 
-local function compile_range_subnets (table)
+local function compile_range_subnets(subnets)
   local range_subnets = {}
 
-  for i = 1, #table do
-    range_subnets[i] = {parse_ip_notation(table[i])}
+  for i = 1, #subnets do
+    range_subnets[i] = {parse_ip_notation(subnets[i])}
   end
 
   return range_subnets
@@ -238,7 +237,7 @@ end
 -- @table  range_subnets
 -- @return function
 
-local function compile_trust (range_subnets)
+local function compile_trust(range_subnets)
   local lx = #range_subnets
   return lx == 0 and trust_none or
     (lx == 1 and trust_single(range_subnets[1]) or trust_multi(range_subnets))
@@ -250,22 +249,23 @@ end
 -- @param  val
 -- @return function
 
-local function compile (val)
+local function compile(val)
   assert(val, 'argument is required')
 
-  local trust, val, _type, i = {}, val, type(val), 1
+  local trust
+  local value, _type, i = val, type(val), 1
   if 'string' == _type then
-    trust = {val}
+    trust = { value }
   else
     assert('table' == _type, 'unsupported trust argument')
-    trust = val
+    trust = value
   end
 
   while trust[i] do
-    if ipranges[trust[i]] then
-      val = ipranges[trust[i]]
-      splice(trust, i, 1, val)
-      i = i + #val - 1
+    if RANGES[trust[i]] then
+      value = RANGES[trust[i]]
+      splice(trust, i, 1, value)
+      i = i + #value - 1
     else
       i = i + 1
     end
@@ -281,7 +281,7 @@ end
 -- @param  trust
 -- @return table
 
-local function alladdrs (req, trust)
+local function alladdrs(req, trust)
   local addrs = forwarded(req)
 
   if not trust then
@@ -313,7 +313,7 @@ end
 -- @param  trust
 -- @return string
 
-local function proxyaddr (_, req, trust)
+local function proxyaddr(_, req, trust)
   assert(req,   'req argument is required')
   assert(trust, 'trust argument is required')
 
