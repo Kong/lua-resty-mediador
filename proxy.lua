@@ -4,9 +4,11 @@
 -- @author    leite (xico@simbio.se)
 -- @license   MIT
 -- @copyright Simbiose 2015
+--
+-- Modifications by Aapo Talvensaari, Mashape, Inc., 2017
 
 local string, table, math, ip_addr, bit_available, bit =
-  require [[string]], require [[table]], require [[math]], require [[ip]], pcall(require, 'bit')
+  require [[string]], require [[table]], require [[math]], require [[mediador.ip]], pcall(require, 'bit')
 
 -- yey! Lua 5.3 bitwise keywords available
 if _VERSION == 'Lua 5.3' then
@@ -18,9 +20,9 @@ if _VERSION == 'Lua 5.3' then
   ]], nil, nil, {bit = bit, math = math}))()
 end
 
-local assert, setmetatable, format, find, match, gmatch, insert, remove, pow, band, lshift,
+local type, tonumber, assert, setmetatable, format, match, gmatch, insert, remove, pow, band, lshift,
   isip, parse_ip =
-  assert, setmetatable, string.format, string.find, string.match, string.gmatch, table.insert,
+  type, tonumber, assert, setmetatable, string.format, string.match, string.gmatch, table.insert,
   table.remove, math.pow, bit.band, bit.lshift, ip_addr.valid, ip_addr.parse
 
 --
@@ -92,23 +94,20 @@ local function parse_netmask (netmask)
     parts, size = ip.parts, 16
   end
 
-  local max, part, range = pow(2, size) - 1, 0, 0
+  local max, range = pow(2, size) - 1, 0
 
   for i = 1, #parts do
-    part = band(parts[i], max)
+    local part = band(parts[i], max)
 
     if max == part then
       range = range + size
-      goto continue
+    else
+      while part > 0 do
+        part  = band(lshift(part, 1), max)
+        range = range + 1
+      end
+      break
     end
-
-    while part > 0 do
-      part  = band(lshift(part, 1), max)
-      range = range + 1
-    end
-
-    break
-    ::continue::
   end
 
   return range
@@ -120,14 +119,14 @@ end
 -- @return ip, number
 
 local function parse_ip_notation (note)
-  local max, kind, ip, range = 0, '', match(note, '^([^/]+)/([^$]+)$')
-  ip                         = (not ip or EMPTY == ip) and note or ip
+  local ip, range = match(note, '^([^/]+)/([^$]+)$')
+  ip = (not ip or EMPTY == ip) and note or ip
 
   assert(isip(ip), format('invalid IP address: %s', ip))
 
   ip   = parse_ip(ip)
-  kind = ip:kind()
-  max  = 'ipv6' == kind and 128 or 32
+  local kind = ip:kind()
+  local max  = 'ipv6' == kind and 128 or 32
 
   if not range or EMPTY == range then
     range = max
@@ -141,7 +140,7 @@ local function parse_ip_notation (note)
     range = range <= max and range - 96 or range
   end
 
-  assert(range > 0 and range <= max, format('invalid range on address: %s', note))
+  assert(range >= 0 and range <= max, format('invalid range on address: %s', note))
 
   return ip, range
 end
@@ -193,27 +192,26 @@ local function trust_multi (subnets)
     end
 
     local ip = parse_ip(addr)
-    local kind, ipv4, subnet, subnet_ip, subnet_kind, subnet_range, trusted =
-      ip:kind()
+    local kind, ipv4 = ip:kind()
 
     for i = 1, #subnets do
-      subnet                  = subnets[i]
-      subnet_ip, subnet_range = subnet[1], subnet[2]
-      subnet_kind, trusted    = subnet_ip:kind(), ip
+      local skip
+      local subnet                  = subnets[i]
+      local subnet_ip, subnet_range = subnet[1], subnet[2]
+      local subnet_kind, trusted    = subnet_ip:kind(), ip
 
       if kind ~= subnet_kind then
         if 'ipv6' ~= kind or 'ipv4' ~= subnet_kind or not ip:is_ipv4_mapped() then
-          goto continue
+          skip = true
+        else
+          ipv4    = ipv4 or ip:ipv4_address()
+          trusted = ipv4
         end
-
-        ipv4    = ipv4 or ip:ipv4_address()
-        trusted = ipv4
       end
 
-      if trusted:match(subnet_ip, subnet_range) then
+      if not skip and trusted:match(subnet_ip, subnet_range) then
         return true
       end
-      ::continue::
     end
     return false
   end
@@ -315,7 +313,7 @@ end
 -- @param  trust
 -- @return string
 
-local function proxyaddr (self, req, trust)
+local function proxyaddr (_, req, trust)
   assert(req,   'req argument is required')
   assert(trust, 'trust argument is required')
 
