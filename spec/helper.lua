@@ -11,6 +11,7 @@ local assert = require "luassert.assert"
 
 local type     = type
 local tostring = tostring
+local select   = select
 local unpack   = unpack
 local tostring = tostring
 local unpack   = table.unpack or unpack
@@ -113,8 +114,9 @@ assert:register('assertion', 'safefail', safe_fail, 'assertion.safe_equals.posit
 -- @return function
 
 return function(fn, ...)
-  local args = {...}
+  local n = select('#', ...)
+  local args = { ... }
   return function()
-    fn(unpack(args))
+    fn(unpack(args, 1, n))
   end
 end

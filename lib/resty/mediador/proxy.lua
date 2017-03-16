@@ -5,17 +5,8 @@
 -- @license   MIT
 -- @copyright Simbiose 2015, Mashape, Inc. 2017
 
+local bit = require "bit"
 local ip  = require "resty.mediador.ip"
-local ok, bit = pcall(require, "bit")
-
-if _VERSION > 'Lua 5.2' then
-  bit = not ok and {} or bit
-  assert(load([[
-    math.pow   = function (a, b) return a ^ b end
-    bit.band   = bit.band or function (a, b) return a & b end
-    bit.lshift = bit.lshift ot function (a, b) return a << b end
-  ]], nil, nil, { bit = bit, math = math }))()
-end
 
 
 local table = table
@@ -74,15 +65,16 @@ end
 
 -- get all addresses in the request, using the `X-Forwarded-For` header
 --
--- @table  req
+-- @string remote
+-- @string xf
 -- @return table
 
-local function forwarded(req)
-  assert(req, 'argument req is required')
+local function forwarded(remote, xf)
+  assert(remote, 'argument remote is required')
 
-  local addrs = {req.connection.remote_address}
+  local addrs = { remote }
 
-  for addr in gmatch((req.headers['x-forwarded-for'] or ''), '%s*([^,$]+)%s*,?') do
+  for addr in gmatch((xf or ''), '%s*([^,$]+)%s*,?') do
     insert(addrs, 2, addr)
   end
 
@@ -286,12 +278,13 @@ end
 --
 -- get all addresses in the request, optionally stopping at the first untrusted.
 --
--- @table  req
+-- @string remote
+-- @string xf
 -- @param  trust
 -- @return table
 
-local function alladdrs(req, trust)
-  local addrs = forwarded(req)
+local function alladdrs(remote, xf, trust)
+  local addrs = forwarded(remote, xf)
 
   if not trust then
     return addrs
@@ -318,15 +311,16 @@ end
 -- determine address of proxied request.
 --
 -- @table  self
--- @table  req
+-- @string remote
+-- @string xf
 -- @param  trust
 -- @return string
 
-local function proxyaddr(_, req, trust)
-  assert(req,   'req argument is required')
-  assert(trust, 'trust argument is required')
+local function proxyaddr(_, remote, xf, trust)
+  assert(remote, 'remote argument is required')
+  assert(trust,   'trust argument is required')
 
-  local addrs = alladdrs(req, trust)
+  local addrs = alladdrs(remote, xf, trust)
   local addr  = addrs[#addrs]
 
   return addr
