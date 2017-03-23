@@ -31,7 +31,6 @@ local match_forwarded
 
 do
   if ngx then
-
     local match  = ngx.re.match
     local gmatch = ngx.re.gmatch
     local unpack = table.unpack or unpack
@@ -235,7 +234,6 @@ end
 
 local function trust_multi(subnets)
   local function _trust(address)
-
     if not(ipvalid(address)) then
       return false
     end
