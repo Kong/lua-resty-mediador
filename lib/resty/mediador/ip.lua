@@ -6,19 +6,17 @@
 -- @copyright Simbiose 2015, Mashape, Inc. 2017
 
 local ok, bit = pcall(require, "bit")
-if not ok and _VERSION > 'Lua 5.2' then
+if not ok and _VERSION > "Lua 5.2" then
   bit = assert(load([[return {
-    band   = function (a, b) return a & b end,
-    bor    = function (a, b) return a | b end,
-    rshift = function (a, b) return a >> b end,
-    lshift = function (a, b) return a << b end
+    band   = function(a, b) return a & b end,
+    bor    = function(a, b) return a | b end,
+    rshift = function(a, b) return a >> b end,
+    lshift = function(a, b) return a << b end
   }]]))()
 end
 
 
 local ip           = {}
-local match        = string.match
-local find         = string.find
 local format       = string.format
 local concat       = table.concat
 local insert       = table.insert
@@ -34,44 +32,149 @@ local pcall        = pcall
 local setmetatable = setmetatable
 
 
-local OCTETS = '^((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)/?(%d*)$'
-local OCTET  = '^((0?[xX]?)[%da-fA-F]+)((/?)(%d*))$'
-local PART   = '(:?)([^:/$]*)(:?)'
-local PARTS  = '^([:%dxXa-fA-F]-::?)(([%dxXa-fA-F]*)[%.%dxXa-fA-F]*)/?(%d*)$'
-local EMPTY  = ''
-local COLON  = ':'
-local ZERO   = '0'
+local match_octets
+local match_octet
+local match_parts
+local find_octets
+local find_octet
+local find_parts
+local find_part
+
+
+do
+  if ngx then
+
+    local match  = ngx.re.match
+    local find   = ngx.re.find
+    local unpack = table.unpack or unpack
+
+    local OCTETS = [[((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)/?(\d*)$]]
+    local OCTET  = [[((0?x?)[\da-f]+)((/?)(\d*))$]]
+    local PARTS  = [[([:\dxa-f]*?::?)(([\dxa-f]*)[.\dxa-f]*)/?(\d*)$]]
+    local PART   = [[(:?)([^:/$]*)(:?)]]
+
+    local ok, new = pcall(require, "table.new")
+    if not ok then
+      new = function() return {} end
+    end
+
+    local octets_captures = new(9, 0)
+    local octet_captures  = new(5, 0)
+    local parts_captures  = new(3, 0)
+
+    match_octets = function(address)
+      if match(address, OCTETS, "aijos", nil, octets_captures) then
+        return unpack(octets_captures)
+      end
+    end
+
+    match_octet = function(address)
+      if match(address, OCTET, "aijos", nil, octet_captures) then
+        return unpack(octet_captures)
+      end
+    end
+
+    match_parts = function(address)
+      if match(address, PARTS, "aijos", nil, parts_captures) then
+        return unpack(parts_captures)
+      end
+    end
+
+    find_octets = function(address)
+      return find(address, OCTETS, "aijos", nil, 1)
+    end
+
+    find_octet = function(address)
+      return find(address, OCTET, "aijos", nil, 1)
+    end
+
+    find_parts = function(address)
+      return find(address, PARTS, "aijos", nil, 1)
+    end
+
+    find_part = function(address, init)
+      local f, t = find(address, PART, "jos", { pos = init or 1 })
+      if f then
+        if match(address, PART, "jos", { pos = init or 1 }, parts_captures) then
+          return f, t, unpack(parts_captures)
+        end
+      end
+    end
+
+  else
+    local match = string.match
+    local find  = string.find
+
+    local OCTETS = "^((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)/?(%d*)$"
+    local OCTET  = "^((0?[xX]?)[%da-fA-F]+)((/?)(%d*))$"
+    local PARTS  = "^([:%dxXa-fA-F]-::?)(([%dxXa-fA-F]*)[%.%dxXa-fA-F]*)/?(%d*)$"
+    local PART   = "(:?)([^:/$]*)(:?)"
+
+    match_octets = function(address)
+      return match(address, OCTETS)
+    end
+
+    match_octet = function(address)
+      return match(address, OCTET)
+    end
+
+    match_parts = function(address)
+      return match(address, PARTS)
+    end
+
+    find_octets = function(address)
+      return find(address, OCTETS)
+    end
+
+    find_octet = function(address)
+      return find(address, OCTET)
+    end
+
+    find_parts = function(address)
+      return find(address, PARTS)
+    end
+
+    find_part = function(address, init)
+      return find(address, PART, init)
+    end
+  end
+end
+
+
+local EMPTY  = ""
+local COLON  = ":"
+local ZERO   = "0"
 local RANGES = {
   ipv4 = {
-    { 'unspecified', octets = {   0,   0,   0,   0 }, _cidr=8   },
-    { 'broadcast',   octets = { 255, 255, 255, 255 }, _cidr=32  },
-    { 'multicast',   octets = { 224,   0,   0,   0 }, _cidr=4   },
-    { 'linkLocal',   octets = { 169, 254,   0,   0 }, _cidr=16  },
-    { 'loopback',    octets = { 127,   0,   0,   0 }, _cidr=8   },
+    { "unspecified", octets = {   0,   0,   0,   0 }, _cidr=8  },
+    { "broadcast",   octets = { 255, 255, 255, 255 }, _cidr=32 },
+    { "multicast",   octets = { 224,   0,   0,   0 }, _cidr=4  },
+    { "linkLocal",   octets = { 169, 254,   0,   0 }, _cidr=16 },
+    { "loopback",    octets = { 127,   0,   0,   0 }, _cidr=8  },
     {
-      'private',   { octets = {  10,   0,   0,   0 }, _cidr=8   },
-                   { octets = { 172,  16,   0,   0 }, _cidr=12  },
-                   { octets = { 192, 168,   0,   0 }, _cidr=16  }
+      "private",   { octets = {  10,   0,   0,   0 }, _cidr=8  },
+                   { octets = { 172,  16,   0,   0 }, _cidr=12 },
+                   { octets = { 192, 168,   0,   0 }, _cidr=16 }
     }, {
-      'reserved',  { octets = { 192,   0,   0,   0 }, _cidr=24  },
-                   { octets = { 192,   0,   2,   0 }, _cidr=24  },
-                   { octets = { 192,  88,  99,   0 }, _cidr=24  },
-                   { octets = { 198,  51, 100,   0 }, _cidr=24  },
-                   { octets = { 203,   0, 113,   0 }, _cidr=24  },
-                   { octets = { 240,   0,   0,   0 }, _cidr=4   }
+      "reserved",  { octets = { 192,   0,   0,   0 }, _cidr=24 },
+                   { octets = { 192,   0,   2,   0 }, _cidr=24 },
+                   { octets = { 192,  88,  99,   0 }, _cidr=24 },
+                   { octets = { 198,  51, 100,   0 }, _cidr=24 },
+                   { octets = { 203,   0, 113,   0 }, _cidr=24 },
+                   { octets = { 240,   0,   0,   0 }, _cidr=4  }
     }
   }, ipv6 = {
-    { 'unspecified',  parts = {          0, 0, 0, 0, 0, 0, 0, 0 }, _cidr=128 },
-    { 'linkLocal',    parts = { 0xfe80,     0, 0, 0, 0, 0, 0, 0 }, _cidr=10  },
-    { 'multicast',    parts = { 0xff00,     0, 0, 0, 0, 0, 0, 0 }, _cidr=8   },
-    { 'loopback',     parts = {          0, 0, 0, 0, 0, 0, 0, 1 }, _cidr=128 },
-    { 'uniqueLocal',  parts = { 0xfc00,     0, 0, 0, 0, 0, 0, 0 }, _cidr=7   },
-    { 'ipv4Mapped',   parts = { 0,     0, 0, 0, 0, 0xffff, 0, 0 }, _cidr=96  },
-    { 'rfc6145',      parts = { 0,     0, 0, 0, 0xffff, 0, 0, 0 }, _cidr=96  },
-    { 'rfc6052',      parts = { 0x64,  0xff9b, 0, 0, 0, 0, 0, 0 }, _cidr=96  },
-    { '6to4',         parts = { 0x2002,     0, 0, 0, 0, 0, 0, 0 }, _cidr=16  },
-    { 'teredo',       parts = { 0x2001,     0, 0, 0, 0, 0, 0, 0 }, _cidr=32  },
-    { 'reserved',     parts = { 0x2001, 0xdb8, 0, 0, 0, 0, 0, 0 }, _cidr=32  }
+    { "unspecified",  parts = {          0, 0, 0, 0, 0, 0, 0, 0 }, _cidr=128 },
+    { "linkLocal",    parts = { 0xfe80,     0, 0, 0, 0, 0, 0, 0 }, _cidr=10  },
+    { "multicast",    parts = { 0xff00,     0, 0, 0, 0, 0, 0, 0 }, _cidr=8   },
+    { "loopback",     parts = {          0, 0, 0, 0, 0, 0, 0, 1 }, _cidr=128 },
+    { "uniqueLocal",  parts = { 0xfc00,     0, 0, 0, 0, 0, 0, 0 }, _cidr=7   },
+    { "ipv4Mapped",   parts = { 0,     0, 0, 0, 0, 0xffff, 0, 0 }, _cidr=96  },
+    { "rfc6145",      parts = { 0,     0, 0, 0, 0xffff, 0, 0, 0 }, _cidr=96  },
+    { "rfc6052",      parts = { 0x64,  0xff9b, 0, 0, 0, 0, 0, 0 }, _cidr=96  },
+    { "6to4",         parts = { 0x2002,     0, 0, 0, 0, 0, 0, 0 }, _cidr=16  },
+    { "teredo",       parts = { 0x2001,     0, 0, 0, 0, 0, 0, 0 }, _cidr=32  },
+    { "reserved",     parts = { 0x2001, 0xdb8, 0, 0, 0, 0, 0, 0 }, _cidr=32  }
   }
 }
 
@@ -81,15 +184,15 @@ local RANGES = {
 -- @return boolean, [string]
 
 local function assert_ipv4(octets)
-  if not(octets and type(octets) == 'table') then
-    return false, 'octets should be a table'
+  if not(octets and type(octets) == "table") then
+    return false, "octets should be a table"
   end
   if not(#octets == 4) then
-    return false, 'ipv4 octet count should be 4'
+    return false, "ipv4 octet count should be 4"
   end
   if not((-1 < octets[1] and 256 > octets[1]) and (-1 < octets[2] and 256 > octets[2]) and
-    (-1 < octets[3] and 256 > octets[3]) and (-1 < octets[4] and 256 > octets[4])) then
-    return false, 'ipv4 octet is a byte'
+         (-1 < octets[3] and 256 > octets[3]) and (-1 < octets[4] and 256 > octets[4])) then
+    return false, "ipv4 octet is a byte"
   end
   return true
 end
@@ -100,17 +203,17 @@ end
 -- @return boolean, [string]
 
 local function assert_ipv6(parts)
-  if not(parts and type(parts) == 'table') then
-    return false, 'parts should be a table'
+  if not(parts and type(parts) == "table") then
+    return false, "parts should be a table"
   end
   if not(#parts == 8) then
-    return false, 'ipv6 part count should be 8'
+    return false, "ipv6 part count should be 8"
   end
   if not((-1 < parts[1] and 0x10000 > parts[1]) and (-1 < parts[2] and 0x10000 > parts[2]) and
-    (-1 < parts[3] and 0x10000 > parts[3]) and (-1 < parts[4] and 0x10000 > parts[4]) and
-    (-1 < parts[5] and 0x10000 > parts[5]) and (-1 < parts[6] and 0x10000 > parts[6]) and
-    (-1 < parts[7] and 0x10000 > parts[7]) and (-1 < parts[8] and 0x10000 > parts[8])) then
-    return false, 'ipv6 part should fit to two octets'
+         (-1 < parts[3] and 0x10000 > parts[3]) and (-1 < parts[4] and 0x10000 > parts[4]) and
+         (-1 < parts[5] and 0x10000 > parts[5]) and (-1 < parts[6] and 0x10000 > parts[6]) and
+         (-1 < parts[7] and 0x10000 > parts[7]) and (-1 < parts[8] and 0x10000 > parts[8])) then
+    return false, "ipv6 part should fit to two octets"
   end
   return true
 end
@@ -124,7 +227,7 @@ end
 -- @return boolean
 
 local function match_cidr(first, second, part_size, cidr_bits)
-  assert(#first == #second, 'cannot match CIDR for objects with different lengths')
+  assert(#first == #second, "cannot match CIDR for objects with different lengths")
   local part = 0
   while cidr_bits > 0 do
     part  = part + 1
@@ -146,7 +249,9 @@ end
 -- @return string
 
 local function subnet_match(address, range_list, default_name)
+
   for i = 1, #range_list do
+
     local subnet = range_list[i]
     if #subnet == 1 then
       if address:match(subnet) then
@@ -161,7 +266,7 @@ local function subnet_match(address, range_list, default_name)
     end
   end
 
-  return default_name or 'unicast'
+  return default_name or "unicast"
 end
 
 -- parse IP version 4
@@ -172,28 +277,29 @@ end
 -- @return boolean, [string]
 
 local function parse_v4(address, octets, cidr)
-  local value, hex, _, _, _cidr = match(address, OCTET)
+  local value, hex, _, _, _cidr = match_octet(address)
 
   if value then
     value = tonumber(value, hex == ZERO and 8 or nil)
     if value > 0xffffffff or value < 0 then
-      return false, 'address outside defined range'
+      return false, "address outside defined range"
     end
     octets[1], octets[2], octets[3], octets[4] =
       band(rshift(value, 24), 0xff), band(rshift(value, 16), 0xff),
-      band(rshift(value, 8), 0xff),  band(value, 0xff)
+      band(rshift(value,  8), 0xff), band(value, 0xff)
     return tonumber(_cidr == EMPTY and 32 or _cidr)
   end
 
-  local st, _st, nd, _nd, rd, _rd, th, _th, _cr = match(address, OCTETS)
+  local st, _st, nd, _nd, rd, _rd, th, _th, _cr = match_octets(address)
 
   if not(st) then
-    return false, 'invalid ip address'
+    return false, "invalid ip address"
   end
 
   octets[1], octets[2], octets[3], octets[4] =
     tonumber(st, _st == ZERO and 8 or nil), tonumber(nd, _nd == ZERO and 8 or nil),
     tonumber(rd, _rd == ZERO and 8 or nil), tonumber(th, _th == ZERO and 8 or nil)
+
   return tonumber(_cr == EMPTY and (cidr and cidr or 32) or _cr)
 end
 
@@ -207,10 +313,10 @@ end
 
 local function parse_v6(address, parts, octets, cidr)
   local l_sep, count, double, addr, octets_st, sep, _cidr =
-    false, 1, 0, match(address, PARTS)
+    false, 1, 0, match_parts(address)
 
   if not addr or EMPTY == addr then
-    return false, 'invalid ipv6 format'
+    return false, "invalid ipv6 format"
   end
 
   if #octets_st == #sep then
@@ -223,29 +329,29 @@ local function parse_v6(address, parts, octets, cidr)
   end
 
   local _cr, length, index, last, separator, part, nd_sep =
-    tonumber(_cidr==EMPTY and (cidr and cidr or 128) or _cidr), #addr, find(addr, PART)
+    tonumber(_cidr==EMPTY and (cidr and cidr or 128) or _cidr), #addr, find_part(addr)
 
   while index and index <= length do
     if separator == COLON and nd_sep == COLON then
       if part == EMPTY or l_sep then
         if double > 0 then
-          return false, 'string is not formatted like ip address'
+          return false, "string is not formatted like ip address"
         end
         double = count
       end
     elseif separator == COLON or nd_sep == COLON then
       if l_sep and separator == COLON then
         if double > 0 then
-          return false, 'string is not formatted like ip address'
+          return false, "string is not formatted like ip address"
         end
         double = count
       end
     end
 
-    insert(parts, tonumber(part == EMPTY and '0' or part, 16))
+    insert(parts, tonumber(part == EMPTY and "0" or part, 16))
 
     l_sep, count, index, last, separator, part, nd_sep =
-      nd_sep == COLON, count + 1, find(addr, PART, last + 1)
+      nd_sep == COLON, count + 1, find_part(addr, last + 1)
   end
 
   if #octets > 0 then
@@ -291,7 +397,7 @@ local ip_metatable = {
   -- @return string|boolean
 
   kind = function(self, kind)
-    local _kind = #self.parts > 0 and 'ipv6' or (#self.octets > 0 and 'ipv4' or EMPTY)
+    local _kind = #self.parts > 0 and "ipv6" or (#self.octets > 0 and "ipv4" or EMPTY)
     if kind then
       return kind == _kind
     end
@@ -316,15 +422,15 @@ local ip_metatable = {
   -- @return string|nil
 
   ipv4_mapped_address = function(self)
-    return self:kind('ipv4') and ip.parsev6('::ffff:' .. self:__tostring()) or nil
+    return self:kind("ipv4") and ip.parsev6("::ffff:" .. self:__tostring()) or nil
   end,
 
-  -- check if it's a ipv4 mapped address
+  -- check if it"s a ipv4 mapped address
   --
   -- @return boolean
 
   is_ipv4_mapped = function(self)
-    return self:range() == 'ipv4Mapped'
+    return self:range() == "ipv4Mapped"
   end,
 
   -- converts ipv6 ipv4-mapped address to ipv4 address
@@ -332,9 +438,9 @@ local ip_metatable = {
   -- @return metatable
 
   ipv4_address = function(self)
-    assert(self:is_ipv4_mapped(), 'trying to convert a generic ipv6 address to ipv4')
+    assert(self:is_ipv4_mapped(), "trying to convert a generic ipv6 address to ipv4")
     local high, low = self.parts[7], self.parts[8]
-    return ip.v4({rshift(high, 8), band(high, 0xff), rshift(low, 8), band(low, 0xff)})
+    return ip.v4({ rshift(high, 8), band(high, 0xff), rshift(low, 8), band(low, 0xff) })
   end,
 
   -- IP table to string
@@ -342,14 +448,14 @@ local ip_metatable = {
   -- @return string
 
   __tostring = function(self)
-    if self:kind('ipv4') then
-      return concat(self.octets, '.')
+    if self:kind("ipv4") then
+      return concat(self.octets, ".")
     end
 
     local state, size, output = 0, #self.parts, {}
 
     for i = 1, size do
-      local part = format('%x', self.parts[i])
+      local part = format("%x", self.parts[i])
       if 0 == state then
         insert(output, (ZERO == part and EMPTY or part))
         state = 1
@@ -384,10 +490,10 @@ local ip_metatable = {
 
   __eq = function(self, value)
     if #self.parts > 0 then
-      assert(value.parts and #value.parts > 0, 'cannot match different address version')
+      assert(value.parts and #value.parts > 0, "cannot match different address version")
       return match_cidr(self.parts, value.parts, 16, value._cidr)
     end
-    assert(value.octets and #value.octets > 0, 'cannot match different address version')
+    assert(value.octets and #value.octets > 0, "cannot match different address version")
     return match_cidr(self.octets, value.octets, 8, value._cidr)
   end
 }
@@ -402,10 +508,10 @@ ip_metatable.__index = ip_metatable
 -- @return metatable
 
 local function new(parts, octets, cidr)
-  return setmetatable({octets=octets, parts=parts, _cidr=cidr}, ip_metatable)
+  return setmetatable({ octets=octets, parts=parts, _cidr=cidr }, ip_metatable)
 end
 
--- assert IP version 4 octets and create it's metatable
+-- assert IP version 4 octets and create it"s metatable
 --
 -- @table  octets
 -- @number cidr
@@ -417,7 +523,7 @@ function ip.v4(octets, cidr)
   return new({}, octets, cidr or 32)
 end
 
--- assert IP version 6 parts and create it's metatable
+-- assert IP version 6 parts and create it"s metatable
 --
 -- @table  parts
 -- @number cidr
@@ -473,7 +579,7 @@ function ip.parse(address)
   elseif ip.isv4(address) then
     return ip.parsev4(address)
   end
-  error('the address has neither IPv6 nor IPv4 format')
+  error("the address has neither IPv6 nor IPv4 format")
 end
 
 -- check if string is a IP version 4 address
@@ -487,7 +593,7 @@ function ip.isv4(address, validate)
     local octets = {}
     return parse_v4(address, octets) ~= false and assert_ipv4(octets)
   end
-  return find(address, OCTET) ~= nil or find(address, OCTETS) ~= nil
+  return find_octet(address) ~= nil or find_octets(address) ~= nil
 end
 
 -- check if string is a IP version 6 address
@@ -501,7 +607,7 @@ function ip.isv6(address, validate)
     local octets, parts = {}, {}
     return parse_v6(address, parts, octets) ~= false and assert_ipv6(parts)
   end
-  return find(address, PARTS) ~= nil
+  return find_parts(address) ~= nil
 end
 
 -- check if IP address is valid

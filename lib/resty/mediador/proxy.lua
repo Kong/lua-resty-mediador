@@ -9,29 +9,78 @@ local bit = require "bit"
 local ip  = require "resty.mediador.ip"
 
 
-local table = table
-local math = math
-local type = type
-local tonumber = tonumber
-local assert = assert
+local table        = table
+local math         = math
+local type         = type
+local tonumber     = tonumber
+local assert       = assert
 local setmetatable = setmetatable
-local format = string.format
-local match = string.match
-local gmatch = string.gmatch
-local insert = table.insert
-local remove = table.remove
-local pow = math.pow
-local band = bit.band
-local lshift = bit.lshift
-local isip = ip.valid
-local parseip = ip.parse
+local format       = string.format
+local insert       = table.insert
+local remove       = table.remove
+local pow          = math.pow
+local band         = bit.band
+local lshift       = bit.lshift
+local ipvalid      = ip.valid
+local ipparse      = ip.parse
 
 
-local EMPTY   = ''
+local match_note
+local match_forwarded
+
+
+do
+  if ngx then
+
+    local match  = ngx.re.match
+    local gmatch = ngx.re.gmatch
+    local unpack = table.unpack or unpack
+
+    local ok, new = pcall(require, "table.new")
+    if not ok then
+      new = function() return {} end
+    end
+
+    local note_captures  = new(2, 0)
+
+    match_note = function(note)
+      if match(note, "([^/]+)/([^$]+)$", "ajos", nil, note_captures) then
+        return unpack(note_captures)
+      end
+    end
+
+    match_forwarded = function(xf)
+      local i = gmatch(xf or "", [[\s*([^,$]+)\s*,?]], "jos")
+      if i then
+        return function()
+          local c = i()
+          if c then
+            return c[1]
+          end
+        end
+      end
+    end
+
+  else
+    local match  = string.match
+    local gmatch = string.gmatch
+
+    match_note = function(note)
+      return match(note, "^([^/]+)/([^$]+)$")
+    end
+
+    match_forwarded = function(xf)
+      return gmatch(xf or "", "%s*([^,$]+)%s*,?")
+    end
+  end
+end
+
+
+local EMPTY   = ""
 local RANGES  = {
-  linklocal   = { '169.254.0.0/16', 'fe80::/10' },
-  loopback    = { '127.0.0.1/8', '::1/128' },
-  uniquelocal = { '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7' }
+  linklocal   = { "169.254.0.0/16", "fe80::/10" },
+  loopback    = { "127.0.0.1/8", "::1/128" },
+  uniquelocal = { "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7" }
 }
 
 -- splice table
@@ -46,11 +95,11 @@ local function splice(destiny, index, replaces, source)
   local chopped = {}
   replaces      = replaces or 1
 
-  if not destiny[index] or not destiny[(index + replaces) - 1] then
+  if not destiny[index] or not destiny[index + replaces - 1] then
     return chopped
   end
 
-  for _ = index, (index + replaces) - 1 do
+  for _ = index, index + replaces - 1 do
     insert(chopped, remove(destiny, index))
   end
 
@@ -70,11 +119,11 @@ end
 -- @return table
 
 local function forwarded(remote, xf)
-  assert(remote, 'argument remote is required')
+  assert(remote, "argument remote is required")
 
   local addrs = { remote }
 
-  for addr in gmatch((xf or ''), '%s*([^,$]+)%s*,?') do
+  for addr in match_forwarded(xf) do
     insert(addrs, 2, addr)
   end
 
@@ -87,10 +136,10 @@ end
 -- @return number
 
 local function parse_netmask(netmask)
-  local addr = parseip(netmask)
+  local addr = ipparse(netmask)
   local parts, size = addr.octets, 8
 
-  if 'ipv6' == addr:kind() then
+  if "ipv6" == addr:kind() then
     parts, size = addr.parts, 16
   end
 
@@ -119,28 +168,28 @@ end
 -- @return ip, number
 
 local function parse_ip_notation(note)
-  local addr, range = match(note, '^([^/]+)/([^$]+)$')
+  local addr, range = match_note(note)
   addr = (not addr or EMPTY == addr) and note or addr
 
-  assert(isip(addr), format('invalid IP address: %s', addr))
+  assert(ipvalid(addr), format("invalid IP address: %s", addr))
 
-  addr = parseip(addr)
+  addr = ipparse(addr)
   local kind = addr:kind()
-  local max  = 'ipv6' == kind and 128 or 32
+  local max  = "ipv6" == kind and 128 or 32
 
   if not range or EMPTY == range then
     range = max
   else
     range = tonumber(range) and tonumber(range) or
-      (isip(range) and parse_netmask(range) or -1)
+      (ipvalid(range) and parse_netmask(range) or -1)
   end
 
-  if 'ipv6' == kind and addr:is_ipv4_mapped() then
+  if "ipv6" == kind and addr:is_ipv4_mapped() then
     addr = addr:ipv4_address()
     range = range <= max and range - 96 or range
   end
 
-  assert(range >= 0 and range <= max, format('invalid range on address: %s', note))
+  assert(range >= 0 and range <= max, format("invalid range on address: %s", note))
 
   return addr, range
 end
@@ -161,19 +210,19 @@ end
 local function trust_single(subnet)
   local subnet_ip, subnet_range = subnet[1], subnet[2]
   local subnet_kind             = subnet_ip:kind()
-  local subnet_isipv4           = subnet_kind == 'ipv4'
+  local subnet_isipv4           = subnet_kind == "ipv4"
 
   local function _trust(address)
-    if not(isip(address)) then
+    if not(ipvalid(address)) then
       return false
     end
 
-    local addr = parseip(address)
+    local addr = ipparse(address)
     local kind = addr:kind()
 
     return kind == subnet_kind and
       addr:match(subnet_ip, subnet_range) or
-      ((subnet_isipv4 and kind == 'ipv6' and addr:is_ipv4_mapped()) and
+      ((subnet_isipv4 and kind == "ipv6" and addr:is_ipv4_mapped()) and
         addr:ipv4_address():match(subnet_ip, subnet_range) or false)
   end
   return _trust
@@ -187,11 +236,11 @@ end
 local function trust_multi(subnets)
   local function _trust(address)
 
-    if not(isip(address)) then
+    if not(ipvalid(address)) then
       return false
     end
 
-    local addr = parseip(address)
+    local addr = ipparse(address)
     local kind, ipv4 = addr:kind()
 
     for i = 1, #subnets do
@@ -201,7 +250,7 @@ local function trust_multi(subnets)
       local subnet_kind, trusted    = subnet_ip:kind(), addr
 
       if kind ~= subnet_kind then
-        if 'ipv6' ~= kind or 'ipv4' ~= subnet_kind or not addr:is_ipv4_mapped() then
+        if "ipv6" ~= kind or "ipv4" ~= subnet_kind or not addr:is_ipv4_mapped() then
           skip = true
         else
           ipv4    = ipv4 or addr:ipv4_address()
@@ -227,7 +276,7 @@ local function compile_range_subnets(subnets)
   local range_subnets = {}
 
   for i = 1, #subnets do
-    range_subnets[i] = {parse_ip_notation(subnets[i])}
+    range_subnets[i] = { parse_ip_notation(subnets[i]) }
   end
 
   return range_subnets
@@ -251,14 +300,14 @@ end
 -- @return function
 
 local function compile(val)
-  assert(val, 'argument is required')
+  assert(val, "argument is required")
 
   local trust
   local value, _type, i = val, type(val), 1
-  if 'string' == _type then
+  if "string" == _type then
     trust = { value }
   else
-    assert('table' == _type, 'unsupported trust argument')
+    assert("table" == _type, "unsupported trust argument")
     trust = value
   end
 
@@ -290,7 +339,7 @@ local function alladdrs(remote, xf, trust)
     return addrs
   end
 
-  if 'function' ~= type(trust) then
+  if "function" ~= type(trust) then
     trust = compile(trust)
   end
 
@@ -317,8 +366,8 @@ end
 -- @return string
 
 local function proxyaddr(_, remote, xf, trust)
-  assert(remote, 'remote argument is required')
-  assert(trust,   'trust argument is required')
+  assert(remote, "remote argument is required")
+  assert(trust,   "trust argument is required")
 
   local addrs = alladdrs(remote, xf, trust)
   local addr  = addrs[#addrs]
