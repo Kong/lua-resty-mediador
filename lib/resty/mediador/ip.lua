@@ -47,7 +47,8 @@ do
     local find   = ngx.re.find
     local unpack = table.unpack or unpack
 
-    local OCTETS = [[((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)/?(\d*)$]]
+    local OCTETS = [[((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)\.]] ..
+                   [[((0?x?)[\da-f]+)\.((0?x?)[\da-f]+)/?(\d*)$]]
     local OCTET  = [[((0?x?)[\da-f]+)((/?)(\d*))$]]
     local PARTS  = [[([:\dxa-f]*?::?)(([\dxa-f]*)[.\dxa-f]*)/?(\d*)$]]
     local PART   = [[(:?)([^:/$]*)(:?)]]
@@ -104,7 +105,8 @@ do
     local match = string.match
     local find  = string.find
 
-    local OCTETS = "^((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)/?(%d*)$"
+    local OCTETS = "^((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)%." ..
+                    "((0?[xX]?)[%da-fA-F]+)%.((0?[xX]?)[%da-fA-F]+)/?(%d*)$"
     local OCTET  = "^((0?[xX]?)[%da-fA-F]+)((/?)(%d*))$"
     local PARTS  = "^([:%dxXa-fA-F]-::?)(([%dxXa-fA-F]*)[%.%dxXa-fA-F]*)/?(%d*)$"
     local PART   = "(:?)([^:/$]*)(:?)"
